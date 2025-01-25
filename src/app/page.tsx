@@ -1,8 +1,11 @@
 import FeedPost from "./_components/FeedPost";
 import { Hand } from "lucide-react";
+import { getServerSession } from "next-auth";
 import Link from "next/link";
 
-export default function Home() {
+export default async function Home() {
+  const session = await getServerSession();
+  console.log(session);
   return (
     <div className="w-full flex flex-col divide-y space-y-2">
       {new Array(5).fill(0).map((_, i) => (
