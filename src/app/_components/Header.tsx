@@ -48,6 +48,10 @@ const UserPageHeader = () => {
 const Header = () => {
   const path = usePathname();
 
+  if (path.startsWith("/onboarding") || path.startsWith("/auth")) {
+    return null;
+  }
+
   if (path.startsWith("/feedpost")) {
     return <FeedPostHeader />;
   }

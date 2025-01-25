@@ -36,6 +36,8 @@ const FooterTab = ({
 
 const Footer = () => {
   const pathname = usePathname();
+  if (pathname.startsWith("/onboarding") || pathname.startsWith("/auth"))
+    return null;
   return (
     <>
       {/* Phone UI: */}
