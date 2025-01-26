@@ -21,8 +21,7 @@ import { compilePackage, getPackageBytesToPublish } from "./utils";
  * 3. Run `pnpm run your_coin`
  */
 
-const MOON_COINS_TO_MINT = 100;
-const MOON_COINS_TO_TRANSFER = 100;
+const COINS_TO_MINT = 1000000;
 
 // Set up the client
 const APTOS_NETWORK: Network =
@@ -33,13 +32,15 @@ const aptos = new Aptos(config);
 /** Register the receiver account to receive transfers for the new coin. */
 async function registerCoin(
   receiver: Account,
-  coinTypeAddress: AccountAddress
+  coinTypeAddress: AccountAddress,
+  tokenPackageName: string,
+  tokenName: string
 ): Promise<string> {
   const transaction = await aptos.transaction.build.simple({
     sender: receiver.accountAddress,
     data: {
       function: "0x1::managed_coin::register",
-      typeArguments: [`${coinTypeAddress}::moon_coin::MoonCoin`],
+      typeArguments: [`${coinTypeAddress}::${tokenPackageName}::${tokenName}`],
       functionArguments: [],
     },
   });
@@ -60,13 +61,17 @@ async function registerCoin(
 async function transferCoin(
   sender: Account,
   receiverAddress: AccountAddress,
-  amount: number | bigint
+  amount: number | bigint,
+  tokenPackageName: string,
+  tokenName: string
 ): Promise<string> {
   const transaction = await aptos.transaction.build.simple({
     sender: sender.accountAddress,
     data: {
       function: "0x1::aptos_account::transfer_coins",
-      typeArguments: [`${sender.accountAddress}::moon_coin::MoonCoin`],
+      typeArguments: [
+        `${sender.accountAddress}::${tokenPackageName}::${tokenName}`,
+      ],
       functionArguments: [receiverAddress, amount],
     },
   });
@@ -87,13 +92,17 @@ async function transferCoin(
 async function mintCoin(
   minter: Account,
   receiverAddress: AccountAddress,
-  amount: number
+  amount: number,
+  tokenPackageName: string,
+  tokenName: string
 ): Promise<string> {
   const transaction = await aptos.transaction.build.simple({
     sender: minter.accountAddress,
     data: {
       function: "0x1::managed_coin::mint",
-      typeArguments: [`${minter.accountAddress}::moon_coin::MoonCoin`],
+      typeArguments: [
+        `${minter.accountAddress}::${tokenPackageName}::${tokenName}`,
+      ],
       functionArguments: [receiverAddress, amount],
     },
   });
@@ -113,22 +122,21 @@ async function mintCoin(
 /** Returns the balance of the newly created coin for an account */
 const getBalance = async (
   accountAddress: AccountAddress,
-  coinTypeAddress: AccountAddress
+  coinTypeAddress: AccountAddress,
+  tokenPackageName: string,
+  tokenName: string
 ) =>
   aptos.getAccountCoinAmount({
     accountAddress,
-    coinType: `${coinTypeAddress.toString()}::moon_coin::MoonCoin`,
+    coinType: `${coinTypeAddress.toString()}::${tokenPackageName}::${tokenName}`,
   });
 
-async function main() {
-  // Create two accounts, Alice and Bob
+export async function generateToken(tokenName: string) {
+  console.log("Creating token.... Starting.");
   const alice = Account.generate();
-  const bob = Account.generate();
 
-  console.log("\n=== Addresses ===");
-  console.log(`Alice: ${alice.accountAddress.toString()}`);
-  console.log(`Bob: ${bob.accountAddress.toString()}`);
-
+  console.log(`Initiated by: ${alice.accountAddress.toString()}`);
+  console.log("Funding the account...");
   // Fund alice account
   await aptos.fundAccount({
     accountAddress: alice.accountAddress,
@@ -136,17 +144,17 @@ async function main() {
   });
 
   // Please ensure you have the aptos CLI installed
-  console.log("\n=== Compiling MoonCoin package locally ===");
-  compilePackage("move/moonCoin", "move/moonCoin/moonCoin.json", [
-    { name: "MoonCoin", address: alice.accountAddress },
+  console.log("[1/3]:Compiling token");
+  compilePackage("./move/token", "./move/token/token.json", [
+    { name: tokenName, address: alice.accountAddress },
   ]);
 
   const { metadataBytes, byteCode } = getPackageBytesToPublish(
-    "move/moonCoin/moonCoin.json"
+    "move/token/token.json"
   );
 
   console.log(
-    `\n=== Publishing MoonCoin package to ${aptos.config.network} network ===`
+    `[2/3]: Publishing the token package to ${aptos.config.network} network`
   );
 
   // Publish MoonCoin package to chain
@@ -156,52 +164,39 @@ async function main() {
     moduleBytecode: byteCode,
   });
 
+  console.log(`[3/3]: Siging the token creation...`);
   const pendingTransaction = await aptos.signAndSubmitTransaction({
     signer: alice,
     transaction,
   });
 
   console.log(`Publish package transaction hash: ${pendingTransaction.hash}`);
+  console.log("Waiting for the transaction to complete...");
   await aptos.waitForTransaction({ transactionHash: pendingTransaction.hash });
 
-  console.log(
-    `Bob's initial MoonCoin balance: ${await getBalance(
-      bob.accountAddress,
-      alice.accountAddress
-    )}.`
-  );
-
-  console.log(`Alice mints herself ${MOON_COINS_TO_MINT} MoonCoin.`);
+  console.log(`Minted ${COINS_TO_MINT} coins. Registering the coin...`);
   const registerCoinTransactionHash = await registerCoin(
     alice,
-    alice.accountAddress
+    alice.accountAddress,
+    "moon_coin",
+    tokenName
   );
+
+  console.log("Waiting for registration transaction...");
   await aptos.waitForTransaction({
     transactionHash: registerCoinTransactionHash,
   });
 
+  console.log("Minting...");
   const mintCoinTransactionHash = await mintCoin(
     alice,
     alice.accountAddress,
-    MOON_COINS_TO_MINT
+    COINS_TO_MINT,
+    "moon_coin",
+    tokenName
   );
+  console.log("Waiting for mint transaction to complete");
   await aptos.waitForTransaction({ transactionHash: mintCoinTransactionHash });
 
-  console.log(`Alice transfers ${MOON_COINS_TO_TRANSFER} MoonCoin to Bob.`);
-  const transferCoinTransactionHash = await transferCoin(
-    alice,
-    bob.accountAddress,
-    MOON_COINS_TO_TRANSFER
-  );
-  await aptos.waitForTransaction({
-    transactionHash: transferCoinTransactionHash,
-  });
-  console.log(
-    `Bob's updated MoonCoin balance: ${await getBalance(
-      bob.accountAddress,
-      alice.accountAddress
-    )}.`
-  );
+  console.log("Minted successfully");
 }
-
-main();
